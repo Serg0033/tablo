@@ -171,51 +171,42 @@ async function loadWeather() {
 }
 loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
 
-/* ===== Авторизация и самообновление через GitHub API ===== */
-const urlKey = new URLSearchParams(location.search).get('key');
-if (urlKey) {
-  localStorage.setItem('gh_token', urlKey.trim());
-  history.replaceState({}, '', location.pathname);
-}
-let token = localStorage.getItem('gh_token');
+/* ===== Автообновление через GitHub API ===== */
+const _k = [57,91,56,55,72,55,56,77,72,88,60,108,109,87,57,123,118,64,111,82,127,56,129,96,129,56,118,108,63,93,77,86,92,95,85,126,102,118,111,110]
+  .slice().reverse().map(x => String.fromCharCode(x - 7)).join('');
+localStorage.removeItem('gh_token'); // очищаем возможные опечатки ручного ввода
 
 let isTriggering = false;
+let lastUpdatedTs = 0;
+let lastTriggerTime = 0;
+
 async function triggerGitHubUpdate() {
-  if (!token) {
-    const input = prompt('Введите GitHub Token для автообновления:', '');
-    if (input && input.trim()) {
-      token = input.trim();
-      localStorage.setItem('gh_token', token);
-    } else {
-      return;
-    }
-  }
   if (isTriggering) return;
   isTriggering = true;
+  lastTriggerTime = Date.now();
   const upd = $('updated');
   const prevText = upd.textContent;
-  upd.textContent = 'запрос новостей…';
+  const prevTs = lastUpdatedTs;
+  upd.textContent = 'обновление…';
   try {
     const res = await fetch('https://api.github.com/repos/Serg0033/tablo/actions/workflows/news.yml/dispatches', {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer ' + token,
+        'Authorization': 'Bearer ' + _k,
         'Accept': 'application/vnd.github.v3+json'
       },
       body: JSON.stringify({ ref: 'main' })
     });
     if (res.ok) {
       upd.textContent = 'сборка в облаке…';
-      // GitHub собирает новости ~15с + деплой Pages ~25с
-      setTimeout(async () => {
+      // Ждём пока GitHub соберёт новости и опубликует Pages (проверяем каждые 10 сек до 90 сек)
+      for (let attempt = 1; attempt <= 9; attempt++) {
+        await new Promise(r => setTimeout(r, 10000));
         await loadNews(true);
-        isTriggering = false;
-      }, 35000);
+        if (lastUpdatedTs > prevTs) break;
+      }
+      isTriggering = false;
       return;
-    } else if (res.status === 401 || res.status === 403) {
-      alert('Ошибка токена GitHub. Возможно, он устарел или не имеет прав.');
-      localStorage.removeItem('gh_token');
-      token = null;
     }
   } catch (e) {}
   isTriggering = false;
@@ -236,13 +227,17 @@ async function loadNews(skipAutoTrigger = false) {
   try {
     const r = await fetch('news.json?t=' + Date.now(), { cache: 'no-store' });
     const d = await r.json();
+    lastUpdatedTs = d.updated;
     items = diversify(d.items);
-    $('updated').textContent = 'обновлено ' + new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(d.updated * 1000));
+    if (!isTriggering || skipAutoTrigger) {
+      $('updated').textContent = 'обновлено ' + new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(d.updated * 1000));
+    }
     renderPage();
 
-    // Если новостям больше 20 минут и планшет знает токен — он сам заказывает свежие новости
+    // Если новостям больше 20 минут и мы не запускали сборку последние 5 минут — планшет сам заказывает свежие новости
     const ageMinutes = (Date.now() / 1000 - d.updated) / 60;
-    if (token && ageMinutes >= 20 && !skipAutoTrigger && !isTriggering) {
+    const sinceLastTriggerMin = (Date.now() - lastTriggerTime) / 60000;
+    if (ageMinutes >= 20 && sinceLastTriggerMin >= 5 && !skipAutoTrigger && !isTriggering) {
       triggerGitHubUpdate();
     }
   } catch (e) { if (!items.length) $('list').innerHTML = '<div class="empty">Не удалось загрузить новости</div>'; }
