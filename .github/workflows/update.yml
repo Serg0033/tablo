@@ -1,0 +1,41 @@
+name: Обновление табло
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # новости раз в 15 минут
+  workflow_dispatch:         # ручной запуск из вкладки Actions
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tablo
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Собрать новости
+        run: python fetch_news.py
+
+      - name: Опубликовать на GitHub Pages (ветка gh-pages, одним коммитом)
+        run: |
+          mkdir _site
+          cp index.html news.json _site/
+          touch _site/.nojekyll
+          cd _site
+          git init -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Обновление $(date -u +%FT%TZ)"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
