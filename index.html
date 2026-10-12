@@ -171,6 +171,57 @@ async function loadWeather() {
 }
 loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
 
+/* ===== Авторизация и самообновление через GitHub API ===== */
+const urlKey = new URLSearchParams(location.search).get('key');
+if (urlKey) {
+  localStorage.setItem('gh_token', urlKey.trim());
+  history.replaceState({}, '', location.pathname);
+}
+let token = localStorage.getItem('gh_token');
+
+let isTriggering = false;
+async function triggerGitHubUpdate() {
+  if (!token) {
+    const input = prompt('Введите GitHub Token для автообновления:', '');
+    if (input && input.trim()) {
+      token = input.trim();
+      localStorage.setItem('gh_token', token);
+    } else {
+      return;
+    }
+  }
+  if (isTriggering) return;
+  isTriggering = true;
+  const upd = $('updated');
+  const prevText = upd.textContent;
+  upd.textContent = 'запрос новостей…';
+  try {
+    const res = await fetch('https://api.github.com/repos/Serg0033/tablo/actions/workflows/news.yml/dispatches', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Accept': 'application/vnd.github.v3+json'
+      },
+      body: JSON.stringify({ ref: 'main' })
+    });
+    if (res.ok) {
+      upd.textContent = 'сборка в облаке…';
+      // GitHub собирает новости ~15с + деплой Pages ~25с
+      setTimeout(async () => {
+        await loadNews(true);
+        isTriggering = false;
+      }, 35000);
+      return;
+    } else if (res.status === 401 || res.status === 403) {
+      alert('Ошибка токена GitHub. Возможно, он устарел или не имеет прав.');
+      localStorage.removeItem('gh_token');
+      token = null;
+    }
+  } catch (e) {}
+  isTriggering = false;
+  upd.textContent = prevText;
+}
+
 /* ===== Новости ===== */
 let items = [], page = 0;
 const perPage = () => matchMedia('(orientation: portrait)').matches ? PER_PAGE_PORTRAIT : PER_PAGE_LANDSCAPE;
@@ -181,13 +232,19 @@ function ago(ts) {
   const h = Math.round(m / 60);
   return h < 24 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
 }
-async function loadNews() {
+async function loadNews(skipAutoTrigger = false) {
   try {
     const r = await fetch('news.json?t=' + Date.now(), { cache: 'no-store' });
     const d = await r.json();
     items = diversify(d.items);
     $('updated').textContent = 'обновлено ' + new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(d.updated * 1000));
     renderPage();
+
+    // Если новостям больше 20 минут и планшет знает токен — он сам заказывает свежие новости
+    const ageMinutes = (Date.now() / 1000 - d.updated) / 60;
+    if (token && ageMinutes >= 20 && !skipAutoTrigger && !isTriggering) {
+      triggerGitHubUpdate();
+    }
   } catch (e) { if (!items.length) $('list').innerHTML = '<div class="empty">Не удалось загрузить новости</div>'; }
 }
 /* Свежие заголовки, но не больше 2 подряд от одного издания, чтобы лента не была однобокой */
@@ -216,7 +273,17 @@ function nextPage() {
   const l = $('list'); l.classList.add('fade');
   setTimeout(() => { page++; renderPage(); l.classList.remove('fade'); }, 600);
 }
-loadNews(); setInterval(loadNews, 5 * 60 * 1000); setInterval(nextPage, PAGE_SECONDS * 1000);
+
+// Клик по надписи "обновлено ..." запускает принудительное обновление
+$('updated').style.cursor = 'pointer';
+$('updated').style.textDecoration = 'underline';
+$('updated').title = 'Нажмите для обновления';
+$('updated').addEventListener('click', (e) => {
+  e.stopPropagation();
+  triggerGitHubUpdate();
+});
+
+loadNews(); setInterval(loadNews, 3 * 60 * 1000); setInterval(nextPage, PAGE_SECONDS * 1000);
 addEventListener('orientationchange', () => setTimeout(renderPage, 300));
 addEventListener('resize', renderPage);
 
