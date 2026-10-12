@@ -1,10 +1,9 @@
-name: Обновление табло
+name: Update Tablo News
 
 on:
   schedule:
-    # Запуск со смещением (не на :00/:15), чтобы избежать перегрузки серверов GitHub
-    - cron: '5,20,35,50 * * * *'
-  workflow_dispatch:         # ручной запуск из вкладки Actions
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
   push:
     branches: [main]
 
@@ -25,10 +24,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Собрать новости
+      - name: Fetch news
         run: python fetch_news.py
 
-      - name: Опубликовать на GitHub Pages (ветка gh-pages, одним коммитом)
+      - name: Publish to gh-pages
         run: |
           mkdir _site
           cp index.html news.json _site/
@@ -38,5 +37,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Обновление $(date -u +%FT%TZ)"
+          git commit -m "Update $(date -u +%FT%TZ)"
           git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
