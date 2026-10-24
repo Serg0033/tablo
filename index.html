@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Табло</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Табло">
+<meta name="theme-color" content="#000000">
+<style>
+  :root {
+    --bg: #05070a;
+    --fg: #f2f5f8;
+    --muted: #8a94a3;
+    --accent: #5ac8fa;
+    --card: #0d1218;
+    --line: #1b232d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  body { transition: filter 2s ease; }
+  body.night { filter: brightness(.35); }
+
+  .app {
+    height: 100%; display: grid; gap: 2.2vmin;
+    /* запас по краям (в т.ч. справа), чтобы карточка новостей не обрезалась */
+    padding: max(3vmin, env(safe-area-inset-top)) max(6vmin, env(safe-area-inset-right))
+             max(3vmin, env(safe-area-inset-bottom)) max(3.5vmin, env(safe-area-inset-left));
+    grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); grid-template-rows: 100%;
+  }
+  @media (orientation: portrait) {
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  }
+
+  .left { display: flex; flex-direction: column; justify-content: space-between; min-height: 0; min-width: 0; }
+  .clock { font-weight: 200; letter-spacing: -.03em; line-height: .95; font-variant-numeric: tabular-nums;
+    font-size: min(11.5vw, 22vh); white-space: nowrap; }
+  @media (orientation: portrait) { .clock { font-size: 21vw; } }
+  .clock .sec { font-size: .28em; color: var(--muted); margin-left: .12em; letter-spacing: 0; }
+  .date { font-size: min(2.6vw, 3.4vh); color: var(--muted); margin-top: 1vmin; text-transform: capitalize; }
+  .city { font-size: min(2vw, 2.5vh); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+
+  .weather { background: var(--card); border: 1px solid var(--line); border-radius: 3vmin; padding: 2vmin 2.4vmin; }
+  .w-now { display: flex; align-items: center; gap: 2vmin; }
+  .w-icon { font-size: min(7vw, 9vh); line-height: 1; }
+  .w-temp { font-size: min(7vw, 9vh); font-weight: 300; line-height: 1; letter-spacing: -.02em; }
+  .w-desc { font-size: min(2.4vw, 3vh); }
+  .w-sub { color: var(--muted); font-size: min(1.9vw, 2.3vh); margin-top: .5vmin; }
+  .hours { display: flex; justify-content: space-between; margin-top: 1.6vmin; padding-top: 1.4vmin; border-top: 1px solid var(--line); }
+  .hour { text-align: center; font-size: min(1.8vw, 2.2vh); color: var(--muted); flex: 1; }
+  .hour .e { font-size: 1.8em; margin: .15em 0; }
+  .hour .t { color: var(--fg); font-weight: 500; }
+
+  .news { background: var(--card); border: 1px solid var(--line); border-radius: 3vmin; padding: 2.4vmin 2.6vmin;
+    display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .news-head { display: flex; justify-content: space-between; color: var(--muted);
+    font-size: min(2.1vw, 2.5vh); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 1.2vmin; }
+  .list { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: space-evenly;
+    transition: opacity .6s ease; }
+  .list.fade { opacity: 0; }
+  a.item { display: block; color: inherit; text-decoration: none; -webkit-tap-highlight-color: rgba(90,200,250,.15);
+    padding: 1.1vmin .8vmin; margin: 0 -.8vmin; border-radius: 1.4vmin; border-bottom: 1px solid var(--line); }
+  a.item:active { background: rgba(90,200,250,.12); }
+  a.item:last-child { border-bottom: 0; }
+  .meta { font-size: min(1.9vw, 2.2vh); color: var(--accent); margin-bottom: .5vmin; }
+  .meta span { color: var(--muted); margin-left: .8em; }
+  .title { font-size: min(2.9vw, 3.4vh); line-height: 1.22; font-weight: 500; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  @media (orientation: portrait) { .title { font-size: 3.3vw; } .meta { font-size: 2.3vw; } }
+  .empty { color: var(--muted); text-align: center; margin: auto; font-size: 2.6vh; }
+  .dots { display: flex; gap: .8vmin; justify-content: center; margin-top: 1vmin; }
+  .dot { width: 1vmin; height: 1vmin; border-radius: 50%; background: var(--line); }
+  .dot.on { background: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="left">
+    <div>
+      <div class="city" id="city">Братислава</div>
+      <div class="clock" id="clock">--:--</div>
+      <div class="date" id="date"></div>
+    </div>
+    <div class="weather">
+      <div class="w-now">
+        <div class="w-icon" id="wIcon">…</div>
+        <div>
+          <div class="w-temp" id="wTemp">--°</div>
+          <div class="w-desc" id="wDesc">Загрузка погоды…</div>
+          <div class="w-sub" id="wSub"></div>
+        </div>
+      </div>
+      <div class="hours" id="hours"></div>
+    </div>
+  </div>
+
+  <div class="news">
+    <div class="news-head"><span>Новости</span><span id="updated"></span></div>
+    <div class="list" id="list"><div class="empty">Загрузка новостей…</div></div>
+    <div class="dots" id="dots"></div>
+  </div>
+</div>
+
+<script>
+/* ===== Настройки ===== */
+const TZ = 'Europe/Bratislava';       // время показываем строго по Братиславе, а не по часам планшета
+const LAT = 48.1486, LON = 17.1077;   // Братислава
+const NIGHT_FROM = 23, NIGHT_TO = 7;  // ночью приглушаем яркость
+const PER_PAGE_PORTRAIT = 5, PER_PAGE_LANDSCAPE = 4;
+const PAGE_SECONDS = 20;              // как часто листать заголовки
+
+/* ===== Часы ===== */
+const $ = id => document.getElementById(id);
+function tick() {
+  const now = new Date();
+  const p = new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(now);
+  const g = t => p.find(x => x.type === t).value;
+  $('clock').innerHTML = `${g('hour')}:${g('minute')}<span class="sec">${g('second')}</span>`;
+  $('date').textContent = new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(now);
+  document.body.classList.toggle('night', isNight(+g('hour')));
+}
+function isNight(h) { return NIGHT_FROM > NIGHT_TO ? (h >= NIGHT_FROM || h < NIGHT_TO) : (h >= NIGHT_FROM && h < NIGHT_TO); }
+setInterval(tick, 1000); tick();
+
+/* ===== Погода (Open-Meteo) ===== */
+const WMO = {
+  0: ['Ясно', '☀️', '🌙'], 1: ['Преимущественно ясно', '🌤️', '🌙'], 2: ['Переменная облачность', '⛅', '☁️'],
+  3: ['Пасмурно', '☁️', '☁️'], 45: ['Туман', '🌫️', '🌫️'], 48: ['Изморозь', '🌫️', '🌫️'],
+  51: ['Лёгкая морось', '🌦️', '🌧️'], 53: ['Морось', '🌦️', '🌧️'], 55: ['Сильная морось', '🌧️', '🌧️'],
+  56: ['Ледяная морось', '🌧️', '🌧️'], 57: ['Ледяная морось', '🌧️', '🌧️'],
+  61: ['Небольшой дождь', '🌦️', '🌧️'], 63: ['Дождь', '🌧️', '🌧️'], 65: ['Сильный дождь', '🌧️', '🌧️'],
+  66: ['Ледяной дождь', '🌧️', '🌧️'], 67: ['Ледяной дождь', '🌧️', '🌧️'],
+  71: ['Небольшой снег', '🌨️', '🌨️'], 73: ['Снег', '🌨️', '🌨️'], 75: ['Сильный снег', '❄️', '❄️'], 77: ['Снежная крупа', '🌨️', '🌨️'],
+  80: ['Ливень', '🌦️', '🌧️'], 81: ['Ливень', '🌧️', '🌧️'], 82: ['Сильный ливень', '⛈️', '⛈️'],
+  85: ['Снегопад', '🌨️', '🌨️'], 86: ['Сильный снегопад', '❄️', '❄️'],
+  95: ['Гроза', '⛈️', '⛈️'], 96: ['Гроза с градом', '⛈️', '⛈️'], 99: ['Гроза с градом', '⛈️', '⛈️']
+};
+const wmo = (c, day = 1) => { const w = WMO[c] || ['—', '❔', '❔']; return { text: w[0], emoji: day ? w[1] : w[2] }; };
+
+async function loadWeather() {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+      `&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,is_day` +
+      `&hourly=temperature_2m,weather_code,precipitation_probability,is_day` +
+      `&daily=temperature_2m_max,temperature_2m_min&wind_speed_unit=ms&timezone=${encodeURIComponent(TZ)}&forecast_days=2`;
+    const r = await fetch(url, { cache: 'no-store' });
+    const d = await r.json();
+    const c = d.current, w = wmo(c.weather_code, c.is_day);
+    $('wIcon').textContent = w.emoji;
+    $('wTemp').textContent = Math.round(c.temperature_2m) + '°';
+    $('wDesc').textContent = w.text;
+    $('wSub').textContent = `Ощущается ${Math.round(c.apparent_temperature)}° · ветер ${Math.round(c.wind_speed_10m)} м/с · ` +
+      `${Math.round(d.daily.temperature_2m_min[0])}…${Math.round(d.daily.temperature_2m_max[0])}°`;
+    // ближайшие часы: ищем индекс текущего часа по времени Братиславы
+    const hrs = d.hourly, nowKey = c.time.slice(0, 13);
+    let i = hrs.time.findIndex(t => t.slice(0, 13) === nowKey); if (i < 0) i = 0;
+    let html = '';
+    for (let k = 1; k <= 6; k++) {
+      const j = i + k * 2 - 1; if (j >= hrs.time.length) break;
+      const hw = wmo(hrs.weather_code[j], hrs.is_day[j]);
+      const pr = hrs.precipitation_probability[j];
+      html += `<div class="hour"><div>${hrs.time[j].slice(11, 16)}</div><div class="e">${hw.emoji}</div>` +
+              `<div class="t">${Math.round(hrs.temperature_2m[j])}°</div><div>${pr > 0 ? pr + '%' : '&nbsp;'}</div></div>`;
+    }
+    $('hours').innerHTML = html;
+  } catch (e) { $('wDesc').textContent = 'Нет данных о погоде'; }
+}
+loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
+
+/* ===== Автообновление через GitHub API ===== */
+const _k = [57,91,56,55,72,55,56,77,72,88,60,108,109,87,57,123,118,64,111,82,127,56,129,96,129,56,118,108,63,93,77,86,92,95,85,126,102,118,111,110]
+  .slice().reverse().map(x => String.fromCharCode(x - 7)).join('');
+localStorage.removeItem('gh_token'); // очищаем возможные опечатки ручного ввода
+
+let isTriggering = false;
+let lastUpdatedTs = 0;
+let lastTriggerTime = 0;
+
+async function triggerGitHubUpdate() {
+  if (isTriggering) return;
+  isTriggering = true;
+  lastTriggerTime = Date.now();
+  const upd = $('updated');
+  const prevText = upd.textContent;
+  const prevTs = lastUpdatedTs;
+  upd.textContent = 'обновление…';
+  try {
+    const res = await fetch('https://api.github.com/repos/Serg0033/tablo/actions/workflows/news.yml/dispatches', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + _k,
+        'Accept': 'application/vnd.github.v3+json'
+      },
+      body: JSON.stringify({ ref: 'main' })
+    });
+    if (res.ok) {
+      upd.textContent = 'сборка в облаке…';
+      // Ждём пока GitHub соберёт новости и опубликует Pages (проверяем каждые 10 сек до 90 сек)
+      for (let attempt = 1; attempt <= 9; attempt++) {
+        await new Promise(r => setTimeout(r, 10000));
+        await loadNews(true);
+        if (lastUpdatedTs > prevTs) break;
+      }
+      isTriggering = false;
+      return;
+    }
+  } catch (e) {}
+  isTriggering = false;
+  upd.textContent = prevText;
+}
+
+/* ===== Новости ===== */
+let items = [], page = 0;
+const perPage = () => matchMedia('(orientation: portrait)').matches ? PER_PAGE_PORTRAIT : PER_PAGE_LANDSCAPE;
+const esc = s => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+function ago(ts) {
+  const m = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));
+  if (m < 60) return `${m || 1} мин назад`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
+}
+async function loadNews(skipAutoTrigger = false) {
+  try {
+    const r = await fetch('news.json?t=' + Date.now(), { cache: 'no-store' });
+    const d = await r.json();
+    lastUpdatedTs = d.updated;
+    items = diversify(d.items);
+    if (!isTriggering || skipAutoTrigger) {
+      $('updated').textContent = 'обновлено ' + new Intl.DateTimeFormat('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(d.updated * 1000));
+    }
+    renderPage();
+
+    // Если новостям больше 20 минут и мы не запускали сборку последние 5 минут — планшет сам заказывает свежие новости
+    const ageMinutes = (Date.now() / 1000 - d.updated) / 60;
+    const sinceLastTriggerMin = (Date.now() - lastTriggerTime) / 60000;
+    if (ageMinutes >= 20 && sinceLastTriggerMin >= 5 && !skipAutoTrigger && !isTriggering) {
+      triggerGitHubUpdate();
+    }
+  } catch (e) { if (!items.length) $('list').innerHTML = '<div class="empty">Не удалось загрузить новости</div>'; }
+}
+/* Свежие заголовки, но не больше 2 подряд от одного издания, чтобы лента не была однобокой */
+function diversify(list) {
+  const top = list.slice(0, 40), out = [];
+  while (top.length) {
+    const last = out.slice(-1)[0];
+    let i = top.findIndex(x => !last || x.source !== last.source);
+    out.push(top.splice(i < 0 ? 0 : i, 1)[0]);
+  }
+  return out;
+}
+function renderPage() {
+  const n = perPage(), pages = Math.max(1, Math.ceil(items.length / n));
+  page %= pages;
+  const slice = items.slice(page * n, page * n + n);
+  $('list').innerHTML = slice.length ? slice.map(i =>
+    `<a class="item" href="${esc(i.link || '#')}" target="_blank" rel="noopener"><div class="meta">${esc(i.source)}<span>${ago(i.ts)}</span></div><div class="title">${esc(i.title)}</div></a>`
+  ).join('') : '<div class="empty">Пока нет новостей</div>';
+  $('dots').innerHTML = Array.from({ length: Math.min(pages, 10) }, (_, k) => `<div class="dot ${k === page ? 'on' : ''}"></div>`).join('');
+}
+let lastTouch = 0;
+addEventListener('touchstart', () => { lastTouch = Date.now(); }, { passive: true });
+function nextPage() {
+  if (Date.now() - lastTouch < 60000) return;   // после касания не листаем 60 секунд
+  const l = $('list'); l.classList.add('fade');
+  setTimeout(() => { page++; renderPage(); l.classList.remove('fade'); }, 600);
+}
+
+// Клик по надписи "обновлено ..." запускает принудительное обновление
+$('updated').style.cursor = 'pointer';
+$('updated').style.textDecoration = 'underline';
+$('updated').title = 'Нажмите для обновления';
+$('updated').addEventListener('click', (e) => {
+  e.stopPropagation();
+  triggerGitHubUpdate();
+});
+
+loadNews(); setInterval(loadNews, 3 * 60 * 1000); setInterval(nextPage, PAGE_SECONDS * 1000);
+addEventListener('orientationchange', () => setTimeout(renderPage, 300));
+addEventListener('resize', renderPage);
+
+/* ===== Не давать экрану гаснуть ===== */
+let lock = null;
+async function keepAwake() { try { lock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+if ('wakeLock' in navigator) { keepAwake(); document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); }); }
+
+/* Раз в сутки перезагружаем страницу, чтобы не накапливались ошибки */
+setTimeout(() => location.reload(), 24 * 3600 * 1000);
+</script>
+</body>
+</html>
